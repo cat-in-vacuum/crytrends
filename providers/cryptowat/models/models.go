@@ -1,9 +1,11 @@
 package models
 
+import "encoding/json"
+
 type OHLCRespCommon map[string]map[string]OHLCResp
 type OHLCResp struct {
-	Result    map[string][][]float64 `json:"result"`
-	Allowance Allowance              `json:"allowance"`
+	Result    map[string][][]json.Number `json:"result"`
+	Allowance Allowance                  `json:"allowance"`
 }
 
 type Allowance struct {

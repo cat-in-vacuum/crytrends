@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	pkgName = "cryptowat client"
+	pkgName   = "cryptowat client"
 	msgErrFmt = "error in %s; causer: %s"
 	msgAllFmt = "%s in " + pkgName + " => %s"
 
@@ -37,10 +37,15 @@ type AssetsContainer struct {
 }
 
 type Client struct {
-	addr   string
-	exec   *http.Client
-	assets *AssetsContainer
+	addr        string
+	exec        *http.Client
+	Assets      *AssetsContainer
+	RetryPolicy RetryPolicy
 }
+
+// todo реализация политики повторов
+//  на случай если сервер временно отваливается
+type RetryPolicy struct{}
 
 type OHLCParams struct {
 	Periods []string
@@ -48,18 +53,19 @@ type OHLCParams struct {
 	Before  int
 }
 
-func(o OHLCParams) JoinPeriods() (out string) {
-	for i := 0; i < len(o.Periods); i ++  {
+func (o OHLCParams) JoinPeriods() (out string) {
+	for i := 0; i < len(o.Periods); i++ {
 		out += o.Periods[i] + ","
 	}
 	return
 }
 
-func New(exec *http.Client, assets *AssetsContainer) *Client {
+func New(exec *http.Client, assets *AssetsContainer, policy RetryPolicy) *Client {
 	return &Client{
-		addr:   mainPath,
-		exec:   exec,
-		assets: assets,
+		addr:        mainPath,
+		exec:        exec,
+		Assets:      assets,
+		RetryPolicy: policy,
 	}
 }
 
@@ -69,24 +75,27 @@ func New(exec *http.Client, assets *AssetsContainer) *Client {
 func (c Client) GetAllOHLC(params OHLCParams) (models.OHLCRespCommon, error) {
 	// логируем весь список текущих ассетов перед началом загрузки,
 	// что бы понимать начальные данные при ошибке
-	log.Debug().Interface("current assets list", c.assets.store).Msgf(msgAllFmt, "start downloading OHLC from assets store", "client.GetAllOHLC()")
+	log.Debug().Interface("current assets list", c.Assets.store).Msgf(msgAllFmt, "start downloading OHLC from assets store", "client.GetAllOHLC()")
 
 	// todo было бы хорошо реализовать pool под эти данные
-	var out = make(models.OHLCRespCommon, len(c.assets.store))
-	if c.assets.store == nil ||
-		len(c.assets.store) == 0 {
+	var out = make(models.OHLCRespCommon, len(c.Assets.store))
+	if c.Assets.store == nil ||
+		len(c.Assets.store) == 0 {
 		return nil, errors.New("assets must be initialed and be not empty")
 	}
 
 	// todo тут реализовать кокурентный запрос для каждого ассета
-	for market, pairs := range c.assets.store {
+	for market, pairs := range c.Assets.store {
+		//
+		marketData := make(map[string]models.OHLCResp, len(pairs))
 		for _, pair := range pairs {
-			resp, err:= c.getOHLC(market, pair, params)
+			resp, err := c.getOHLC(market, pair, params)
 			if err != nil {
 				log.Error().Err(err).Msgf(msgErrFmt, pkgName, "client.getOHLC()")
 				continue
 			}
-			out[market][pair] = *resp
+			marketData[pair] = *resp
+			out[market] = marketData
 		}
 	}
 
