@@ -1,9 +1,11 @@
 package cryptowat
 
 import (
+	"context"
 	"encoding/json"
-	"github.com/cat-in-vacuum/crytrade/providers/cryptowat/models"
+	"github.com/cat-in-vacuum/crytrade/providers/cryptowat/types"
 	"github.com/pkg/errors"
+	"github.com/rs/xid"
 	"github.com/rs/zerolog/log"
 	"io"
 	"io/ioutil"
@@ -16,19 +18,38 @@ import (
 )
 
 const (
+	// константы для логирования
 	pkgName   = "cryptowat client"
-	msgErrFmt = "error in %s; causer: %s"
-	msgAllFmt = "%s in " + pkgName + " => %s"
+	msgErrFmt = "error in %s; causer: %s; reqID: %s;"
+	msgAllFmt = "%s in " + pkgName + " => %s; generationID: %s;"
 
+	// пути для апи
 	mainPath = "https://api.cryptowat.ch/"
-
 	marketPath = "markets"
 	ohlcPath   = "ohlc"
+
+	// ключи контекста
+	ctxIDKey = "id_key"
 )
+
+// будем использовать для передачи вспомогательных данных внутри процессов
+type Context struct {
+	context.Context
+}
+
+func (ctx *Context) SetID() {
+	ctx.Context = context.WithValue(context.Background(), ctxIDKey, xid.New().String())
+}
+
+func (ctx *Context) GetID() string {
+	if id, ok := ctx.Context.Value(ctxIDKey).(string); ok {
+		return id
+	}
+	return ctx.GetID()
+}
 
 // вообще стоило использовать клиент https://github.com/cryptowatch/cw-sdk-go/blob/master/client/rest/rest.go
 // т.к. все равно реализоавть лучше за короткий срок не получится. Но, раз уж я взялся, доделал хоть минимальный ф-ционал
-
 type AssetsContainer struct {
 	store map[string][]string
 	// еслм мы заходим менять список ассетов динамически,
@@ -72,13 +93,15 @@ func New(exec *http.Client, assets *AssetsContainer, policy RetryPolicy) *Client
 // функция для загрузки данных по всему существующему в памяти списку ассетов
 // todo вообще, было бы хорошо реализовать тонкую настройку параметров запроса для каждого ассета
 //  но, для примера я этого не делал
-func (c Client) GetAllOHLC(params OHLCParams) (models.OHLCRespCommon, error) {
+func (c Client) GetAllOHLC(ctx Context, params OHLCParams) (types.OHLCRespCommon, error) {
 	// логируем весь список текущих ассетов перед началом загрузки,
 	// что бы понимать начальные данные при ошибке
-	log.Debug().Interface("current assets list", c.Assets.store).Msgf(msgAllFmt, "start downloading OHLC from assets store", "client.GetAllOHLC()")
+	ctx.SetID()
+	id := ctx.GetID()
+	log.Debug().Interface("current assets list", c.Assets.store).Msgf(msgAllFmt, "start downloading OHLC from assets store", "client.GetAllOHLC()", id)
 
 	// todo было бы хорошо реализовать pool под эти данные
-	var out = make(models.OHLCRespCommon, len(c.Assets.store))
+	var out = make(types.OHLCRespCommon, len(c.Assets.store))
 	if c.Assets.store == nil ||
 		len(c.Assets.store) == 0 {
 		return nil, errors.New("assets must be initialed and be not empty")
@@ -86,14 +109,17 @@ func (c Client) GetAllOHLC(params OHLCParams) (models.OHLCRespCommon, error) {
 
 	// todo тут реализовать кокурентный запрос для каждого ассета
 	for market, pairs := range c.Assets.store {
-		//
-		marketData := make(map[string]models.OHLCResp, len(pairs))
+
+		marketData := make(map[string]types.OHLCResp, len(pairs))
 		for _, pair := range pairs {
-			resp, err := c.getOHLC(market, pair, params)
+			// тут может встпуать в бой запрос с политикой повтров
+			// с.getOHLCRetryable()
+			resp, err := c.getOHLC(ctx, market, pair, params)
 			if err != nil {
-				log.Error().Err(err).Msgf(msgErrFmt, pkgName, "client.getOHLC()")
+				log.Error().Err(err).Msgf(msgErrFmt, pkgName, "client.getOHLC()", id)
 				continue
 			}
+
 			marketData[pair] = *resp
 			out[market] = marketData
 		}
@@ -102,9 +128,18 @@ func (c Client) GetAllOHLC(params OHLCParams) (models.OHLCRespCommon, error) {
 	return out, nil
 }
 
-func (c Client) getOHLC(market, pair string, params OHLCParams) (*models.OHLCResp, error) {
-	var out models.OHLCResp
+func (c Client) GetOHLCFromAsset(ctx Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
+	return c.getOHLC(ctx, market, pair, params)
+}
+
+func (c Client) getOHLCRetryable() (*types.OHLCResp, error) {
+	return nil, nil
+}
+
+func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
+	var out types.OHLCResp
 	reqURL, err := url.Parse(mainPath)
+	id := ctx.GetID()
 	if err != nil {
 		return nil, errors.Wrap(err, "error in build URL path, getOHLC()")
 	}
@@ -117,7 +152,7 @@ func (c Client) getOHLC(market, pair string, params OHLCParams) (*models.OHLCRes
 	q.Set("before", strconv.Itoa(params.Before))
 	reqURL.RawQuery = q.Encode()
 
-	log.Debug().Str("req url", reqURL.String()).Msgf(msgAllFmt, "starting download data", "client.getOHLC()")
+	log.Debug().Str("req url", reqURL.String()).Msgf(msgAllFmt, "starting download data", "client.getOHLC()", id)
 	resp, err := c.exec.Get(reqURL.String())
 	if err != nil {
 		return nil, err
@@ -127,14 +162,14 @@ func (c Client) getOHLC(market, pair string, params OHLCParams) (*models.OHLCRes
 		return nil, err
 	}
 
-	log.Debug().Str("resp status", resp.Status).Msgf(msgAllFmt, "starting download data", "client.getOHLC()")
+	log.Debug().Str("resp status", resp.Status).Msgf(msgAllFmt, "starting download data", "client.getOHLC()", id)
 	if err = json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}
 
 	// переиспользуем соединение, что бы не выделять под него память повтороно при кажом запросе
-	io.Copy(ioutil.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(ioutil.Discard, resp.Body)
+	_ = resp.Body.Close()
 
 	return &out, nil
 }
