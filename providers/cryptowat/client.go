@@ -21,7 +21,7 @@ const (
 	// константы для логирования
 	pkgName   = "cryptowat client"
 	msgErrFmt = "error in %s; causer: %s; reqID: %s;"
-	msgAllFmt = "%s in " + pkgName + " => %s; generationID: %s;"
+	msgAllFmt = "%s in " + pkgName + " => %s; reqID: %s;"
 
 	// пути для апи
 	mainPath = "https://api.cryptowat.ch/"
@@ -45,6 +45,8 @@ func (ctx *Context) GetID() string {
 	if id, ok := ctx.Context.Value(ctxIDKey).(string); ok {
 		return id
 	}
+
+	ctx.SetID()
 	return ctx.GetID()
 }
 
