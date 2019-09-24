@@ -138,6 +138,9 @@ func (c Client) getOHLCRetryable() (*types.OHLCResp, error) {
 	return nil, nil
 }
 
+// todo ф-ци самого запроса не долджна быть привязанна к конкретному роуту поставщика
+//  стоит реализовтаь отдельный тип, который будет характеризовать все методы апи и потреблять тип
+//  который будет описывать необходимый запрос
 func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
 	var out types.OHLCResp
 	reqURL, err := url.Parse(mainPath)
