@@ -2,7 +2,8 @@ package types
 
 import "encoding/json"
 
-type OHLCRespCommon map[string]map[string]OHLCResp
+type OHLCRespCommon map[string]RespPairs
+type RespPairs map[string]OHLCResp
 type OHLCResp struct {
 	Result    map[string][][]json.Number `json:"result"`
 	Allowance Allowance                  `json:"allowance"`

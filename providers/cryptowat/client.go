@@ -21,7 +21,7 @@ const (
 	// константы для логирования
 	pkgName   = "cryptowat client"
 	msgErrFmt = "error in %s; causer: %s; reqID: %s;"
-	msgAllFmt = "%s in " + pkgName + " => %s; reqID: %s;"
+	msgCommonFmt = "%s in " + pkgName + " => %s; reqID: %s;"
 
 	// пути для апи
 	mainPath = "https://api.cryptowat.ch/"
@@ -45,7 +45,6 @@ func (ctx *Context) GetID() string {
 	if id, ok := ctx.Context.Value(ctxIDKey).(string); ok {
 		return id
 	}
-
 	ctx.SetID()
 	return ctx.GetID()
 }
@@ -67,7 +66,7 @@ type Client struct {
 }
 
 // todo реализация политики повторов
-//  на случай если сервер временно отваливается
+//  на случай если сервер поставщика временно отваливается
 type RetryPolicy struct{}
 
 type OHLCParams struct {
@@ -100,7 +99,7 @@ func (c Client) GetAllOHLC(ctx Context, params OHLCParams) (types.OHLCRespCommon
 	// что бы понимать начальные данные при ошибке
 	ctx.SetID()
 	id := ctx.GetID()
-	log.Debug().Interface("current assets list", c.Assets.store).Msgf(msgAllFmt, "start downloading OHLC from assets store", "client.GetAllOHLC()", id)
+	log.Debug().Interface("current assets list", c.Assets.store).Msgf(msgCommonFmt, "start downloading OHLC from assets store", "client.GetAllOHLC()", id)
 
 	// todo было бы хорошо реализовать pool под эти данные
 	var out = make(types.OHLCRespCommon, len(c.Assets.store))
@@ -143,10 +142,12 @@ func (c Client) getOHLCRetryable() (*types.OHLCResp, error) {
 //  который будет описывать необходимый запрос
 func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
 	var out types.OHLCResp
+	var reqID string
 	reqURL, err := url.Parse(mainPath)
-	id := ctx.GetID()
+	reqID = ctx.GetID()
 	if err != nil {
-		return nil, errors.Wrap(err, "error in build URL path, getOHLC()")
+		// если не удалось получить ИД прожолжаем выполнять запрос показывая, что есть проблема
+		reqID = errors.Wrap(err, "error in  ctx.GetID(), getOHLC()").Error()
 	}
 
 	// todo убрать это отсюда и вынести в отдельную ф-цию
@@ -157,7 +158,7 @@ func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*t
 	q.Set("before", strconv.Itoa(params.Before))
 	reqURL.RawQuery = q.Encode()
 
-	log.Debug().Str("req url", reqURL.String()).Msgf(msgAllFmt, "starting download data", "client.getOHLC()", id)
+	log.Debug().Str("req url", reqURL.String()).Msgf(msgCommonFmt, "starting download data", "client.getOHLC()", reqID)
 	resp, err := c.exec.Get(reqURL.String())
 	if err != nil {
 		return nil, err
@@ -167,7 +168,7 @@ func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*t
 		return nil, err
 	}
 
-	log.Debug().Str("resp status", resp.Status).Msgf(msgAllFmt, "starting download data", "client.getOHLC()", id)
+	log.Debug().Str("resp status", resp.Status).Msgf(msgCommonFmt, "starting download data", "client.getOHLC()", reqID)
 	if err = json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}
@@ -182,6 +183,7 @@ func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*t
 func (a AssetsContainer) GetCurrentAssets() map[string][]string {
 	return a.store
 }
+
 
 func (a *AssetsContainer) SetAsset(market string, pairs ...string) {
 	a.Lock()
