@@ -1,7 +1,6 @@
-package cryptowat
+package db
 
 import (
-	"context"
 	"database/sql"
 
 	"github.com/cat-in-vacuum/crytrade/db/cryptowat/schema"
@@ -31,10 +30,9 @@ func (r *PostgresRepository) Close() {
 	r.db.Close()
 }
 
-func (r *PostgresRepository) InsertOHLC(ctx context.Context, ohlc schema.OHLCSchema) error {
+func (r *PostgresRepository) InsertOHLC(ohlc *schema.OHLCSchema) error {
 	_, err := r.db.Exec(
 		queryInsert,
-		ohlc.ID,
 		ohlc.QueryTime,
 		ohlc.Market,
 		ohlc.Pair,
@@ -43,7 +41,7 @@ func (r *PostgresRepository) InsertOHLC(ctx context.Context, ohlc schema.OHLCSch
 	return err
 }
 
-func (r *PostgresRepository) ListOHLCs(ctx context.Context, skip uint64, take uint64) ([]schema.OHLCSchema, error) {
+func (r *PostgresRepository) ListOHLC(skip uint64, take uint64) ([]schema.OHLCSchema, error) {
 	rows, err := r.db.Query(queryList, skip, take)
 	if err != nil {
 		return nil, err
@@ -54,7 +52,6 @@ func (r *PostgresRepository) ListOHLCs(ctx context.Context, skip uint64, take ui
 	for rows.Next() {
 		ohlc := schema.OHLCSchema{}
 		if err = rows.Scan(queryInsert,
-			&ohlc.ID,
 			&ohlc.QueryTime,
 			&ohlc.Market,
 			&ohlc.Pair,

@@ -1,14 +1,13 @@
-package cryptowat
+package db
 
 import (
-	"context"
 	"github.com/cat-in-vacuum/crytrade/db/cryptowat/schema"
 )
 
 type Repository interface {
 	Close()
-	InsertOHLC(ctx context.Context, ohlc schema.OHLCSchema) error
-	ListOHLC(ctx context.Context, skip uint64, take uint64) ([]schema.OHLCSchema, error)
+	InsertOHLC(ohlc *schema.OHLCSchema) error
+	ListOHLC(skip uint64, take uint64) ([]schema.OHLCSchema, error)
 }
 
 // оставляем возможность переключать дб на лету
@@ -22,11 +21,11 @@ func Close() {
 	impl.Close()
 }
 
-func InsertOHLC(ctx context.Context, ohlc schema.OHLCSchema) error {
-	return impl.InsertOHLC(ctx, ohlc)
+func InsertOHLC(ohlc *schema.OHLCSchema) error {
+	return impl.InsertOHLC(ohlc)
 }
 
-func ListOHLC(ctx context.Context, skip uint64, take uint64) ([]schema.OHLCSchema, error) {
-	return impl.ListOHLC(ctx, skip, take)
+func ListOHLC(skip uint64, take uint64) ([]schema.OHLCSchema, error) {
+	return impl.ListOHLC(skip, take)
 }
 
