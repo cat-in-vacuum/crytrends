@@ -4,8 +4,8 @@ import (
 	"github.com/cat-in-vacuum/crytrade/db"
 	"github.com/cat-in-vacuum/crytrade/providers"
 	"github.com/cat-in-vacuum/crytrade/providers/cryptowat"
-	"github.com/cat-in-vacuum/crytrade/scheduler"
 	"github.com/cat-in-vacuum/crytrade/service/conv"
+	"github.com/jasonlvhit/gocron"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
@@ -14,19 +14,23 @@ import (
 // которые реализуют метод поставки типов providers.OHLCAssets
 type Service struct {
 	db        db.Repository
-	scheduler *scheduler.Scheduler
 	client    *cryptowat.Client
 }
 
 func NewService(
 	db db.Repository,
 	client *cryptowat.Client,
-	scheduler *scheduler.Scheduler,
 ) *Service {
-	return &Service{db: db, scheduler: scheduler, client: client}
+	return &Service{db: db, client: client}
 }
 
-func (s Service) StartStoringOHLC(ctx providers.Context, assets cryptowat.AssetsContainer, params cryptowat.OHLCParams, ) error {
+// TODO реализовать возможность настройки тасок
+func (s Service) StartStoringWithInterval(ctx providers.Context, assets cryptowat.AssetsContainer, params cryptowat.OHLCParams) {
+	gocron.Every(5).Seconds().Do(s.startStoringOHLC, ctx, assets, params)
+	<-gocron.Start()
+}
+
+func (s Service) startStoringOHLC(ctx providers.Context, assets cryptowat.AssetsContainer, params cryptowat.OHLCParams) error {
 	ctx.SetID()
 	resp, err := s.client.GetAllOHLC(ctx, params)
 	if err != nil {

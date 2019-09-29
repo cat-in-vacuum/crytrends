@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/cat-in-vacuum/crytrade/db"
+	"github.com/cat-in-vacuum/crytrade/providers"
 	"github.com/cat-in-vacuum/crytrade/providers/cryptowat"
+	"github.com/cat-in-vacuum/crytrade/service"
 	"net/http"
-	"time"
 )
 
 func main() {
@@ -14,18 +16,17 @@ func main() {
 	data.SetAsset("bitfinex", "ltcbtc")
 
 	cw := cryptowat.New(&http.Client{}, &data, cryptowat.RetryPolicy{})
-	ctx := cryptowat.Context{
+	ctx := providers.Context{
 		Context: context.Background(),
 	}
 	params := cryptowat.OHLCParams{
 		Periods: []string{"60", "180"},
 	}
-	ts := time.Now()
-	resp, err := cw.GetAllOHLC(ctx, params)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(time.Since(ts))
-	fmt.Println(resp)
+
+	storage, _ := db.NewPostgres(fmt.Sprintf("postgres://%s:%s@localhost/%s?sslmode=disable", "admin" , "admin" , "postgres"))
+
+    db.SetRepository(storage)
+
+	srvs := service.NewService(storage, cw)
+	srvs.StartStoringWithInterval(ctx, data, params)
 }
