@@ -1,11 +1,10 @@
 package cryptowat
 
 import (
-	"context"
 	"encoding/json"
+	"github.com/cat-in-vacuum/crytrade/providers"
 	"github.com/cat-in-vacuum/crytrade/providers/cryptowat/types"
 	"github.com/pkg/errors"
-	"github.com/rs/xid"
 	"github.com/rs/zerolog/log"
 	"io"
 	"io/ioutil"
@@ -15,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"sync"
+	"time"
 )
 
 const (
@@ -27,27 +27,8 @@ const (
 	mainPath = "https://api.cryptowat.ch/"
 	marketPath = "markets"
 	ohlcPath   = "ohlc"
-
-	// ключи контекста
-	ctxIDKey = "id_key"
 )
 
-// будем использовать для передачи вспомогательных данных внутри процессов
-type Context struct {
-	context.Context
-}
-
-func (ctx *Context) SetID() {
-	ctx.Context = context.WithValue(context.Background(), ctxIDKey, xid.New().String())
-}
-
-func (ctx *Context) GetID() string {
-	if id, ok := ctx.Context.Value(ctxIDKey).(string); ok {
-		return id
-	}
-	ctx.SetID()
-	return ctx.GetID()
-}
 
 // вообще стоило использовать клиент https://github.com/cryptowatch/cw-sdk-go/blob/master/client/rest/rest.go
 // т.к. все равно реализоавть лучше за короткий срок не получится. Но, раз уж я взялся, доделал хоть минимальный ф-ционал
@@ -94,10 +75,9 @@ func New(exec *http.Client, assets *AssetsContainer, policy RetryPolicy) *Client
 // функция для загрузки данных по всему существующему в памяти списку ассетов
 // todo вообще, было бы хорошо реализовать тонкую настройку параметров запроса для каждого ассета
 //  но, для примера я этого не делал
-func (c Client) GetAllOHLC(ctx Context, params OHLCParams) (types.OHLCRespCommon, error) {
+func (c Client) GetAllOHLC(ctx providers.Context, params OHLCParams) (types.OHLCRespCommon, error) {
 	// логируем весь список текущих ассетов перед началом загрузки,
 	// что бы понимать начальные данные при ошибке
-	ctx.SetID()
 	id := ctx.GetID()
 	log.Debug().Interface("current assets list", c.Assets.store).Msgf(msgCommonFmt, "start downloading OHLC from assets store", "client.GetAllOHLC()", id)
 
@@ -110,17 +90,16 @@ func (c Client) GetAllOHLC(ctx Context, params OHLCParams) (types.OHLCRespCommon
 
 	// todo тут реализовать кокурентный запрос для каждого ассета
 	for market, pairs := range c.Assets.store {
-
 		marketData := make(map[string]types.OHLCResp, len(pairs))
 		for _, pair := range pairs {
 			// тут может встпуать в бой запрос с политикой повтров
 			// с.getOHLCRetryable()
 			resp, err := c.getOHLC(ctx, market, pair, params)
 			if err != nil {
-				log.Error().Err(err).Msgf(msgErrFmt, pkgName, "client.getOHLC()", id)
+				log.Error().Err(err).Strs("asset", []string{pair, market}).Msgf(msgErrFmt, pkgName, "client.getOHLC()", id)
 				continue
 			}
-
+			resp.QueryTime = time.Now()
 			marketData[pair] = *resp
 			out[market] = marketData
 		}
@@ -129,7 +108,7 @@ func (c Client) GetAllOHLC(ctx Context, params OHLCParams) (types.OHLCRespCommon
 	return out, nil
 }
 
-func (c Client) GetOHLCFromAsset(ctx Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
+func (c Client) GetOHLCFromAsset(ctx providers.Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
 	return c.getOHLC(ctx, market, pair, params)
 }
 
@@ -140,7 +119,7 @@ func (c Client) getOHLCRetryable() (*types.OHLCResp, error) {
 // todo ф-ци самого запроса не долджна быть привязанна к конкретному роуту поставщика
 //  стоит реализовтаь отдельный тип, который будет характеризовать все методы апи и потреблять тип
 //  который будет описывать необходимый запрос
-func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
+func (c Client) getOHLC(ctx providers.Context, market, pair string, params OHLCParams) (*types.OHLCResp, error) {
 	var out types.OHLCResp
 	var reqID string
 	reqURL, err := url.Parse(mainPath)
@@ -166,6 +145,9 @@ func (c Client) getOHLC(ctx Context, market, pair string, params OHLCParams) (*t
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("non 200 http.StatusCode")
 	}
 
 	log.Debug().Str("resp status", resp.Status).Msgf(msgCommonFmt, "starting download data", "client.getOHLC()", reqID)

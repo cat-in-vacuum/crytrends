@@ -22,11 +22,11 @@ func Close() {
 	impl.Close()
 }
 
-func InsertOHLC(ctx context.Context, ohlc OHLCSchema) error {
+func InsertOHLC(ctx context.Context, ohlc schema.OHLCSchema) error {
 	return impl.InsertOHLC(ctx, ohlc)
 }
 
-func ListOHLC(ctx context.Context, skip uint64, take uint64) ([]OHLCSchema, error) {
+func ListOHLC(ctx context.Context, skip uint64, take uint64) ([]schema.OHLCSchema, error) {
 	return impl.ListOHLC(ctx, skip, take)
 }
 
